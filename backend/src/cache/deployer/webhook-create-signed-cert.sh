@@ -15,7 +15,6 @@
 # limitations under the License.
 
 set -ex
-
 usage() {
     cat <<EOF
 Generate certificate suitable for use with an sidecar-injector webhook service.
@@ -33,7 +32,6 @@ The following flags are required.
 EOF
     exit 1
 }
-
 while [[ $# -gt 0 ]]; do
     case ${1} in
         --service)
@@ -58,25 +56,21 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
-
 [ -z ${service} ] && service=cache-server
 [ -z ${secret} ] && secret=webhook-server-tls
 [ -z ${namespace} ] && namespace=kubeflow
 [ -z ${cert_output_path} ] && cert_output_path=${CA_FILE}
-
 if [ ! -x "$(command -v openssl)" ]; then
     echo "openssl not found"
     exit 1
 fi
-
 csrName=${service}.${namespace}
 tmpdir=$(mktemp -d)
 echo "creating certs in tmpdir ${tmpdir} "
-
-# create csr config file for csr generation. 
+# create csr config file for csr generation.
 # [req] is for csr with distinguished_name setting.
 # [v3_req] is extensions to add to a certificate request in this case is for setting key constraints and usages.
-# [alt_names] specifies additional subject identities. So the keys can be matched by different DNS names. 
+# [alt_names] specifies additional subject identities. So the keys can be matched by different DNS names.
 cat <<EOF >> ${tmpdir}/csr.conf
 [req]
 req_extensions = v3_req
@@ -92,15 +86,11 @@ DNS.1 = ${service}
 DNS.2 = ${service}.${namespace}
 DNS.3 = ${service}.${namespace}.svc
 EOF
-
 openssl genrsa -out ${tmpdir}/server-key.pem 2048
 openssl req -new -key ${tmpdir}/server-key.pem -subj "/CN=${service}.${namespace}.svc" -out ${tmpdir}/server.csr -config ${tmpdir}/csr.conf
-
 echo "start running kubectl..."
-
 # clean-up any previously created CSR for our service. Ignore errors if not present.
 kubectl delete csr ${csrName} 2>/dev/null || true
-
 # create  server cert/key CSR and  send to k8s API
 cat <<EOF | kubectl create -f -
 apiVersion: certificates.k8s.io/v1beta1
@@ -116,7 +106,6 @@ spec:
   - key encipherment
   - server auth
 EOF
-
 # verify CSR has been created
 while true; do
     kubectl get csr ${csrName}
@@ -125,7 +114,6 @@ while true; do
     fi
     sleep 1
 done
-
 # approve and fetch the signed certificate
 kubectl certificate approve ${csrName}
 # verify certificate has been signed
@@ -141,9 +129,7 @@ if [[ ${serverCert} == '' ]]; then
     exit 1
 fi
 echo ${serverCert} | openssl base64 -d -A -out ${tmpdir}/server-cert.pem
-
 echo ${serverCert} > ${cert_output_path}
-
 # create the secret with CA cert and server cert/key
 kubectl create secret generic ${secret} \
         --from-file=key.pem=${tmpdir}/server-key.pem \

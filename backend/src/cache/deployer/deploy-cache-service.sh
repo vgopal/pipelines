@@ -19,7 +19,6 @@
 # https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl
 
 set -ex
-
 # Warning: grep in this image does not support long option names like --word-regexp
 
 echo "Start deploying cache service to existing cluster:"
@@ -44,16 +43,16 @@ export PATH="$HOME/bin:$PATH"
 # Gotcha: Listing all objects requires list permission,
 # but when listing a single oblect kubectl will fail if it's not found
 # unless --ignore-not-found is specified.
-kubectl get mutatingwebhookconfigurations "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >webhooks.txt
-kubectl get secrets "${WEBHOOK_SECRET_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >cache_secret.txt
+kubectl get mutatingwebhookconfigurations "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >$HOME/webhooks.txt
+kubectl get secrets "${WEBHOOK_SECRET_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >$HOME/cache_secret.txt
 
 webhook_config_exists=false
-if grep "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" -w <webhooks.txt; then
+if grep "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" -w <$HOME/webhooks.txt; then
     webhook_config_exists=true
 fi
 
 webhook_secret_exists=false
-if grep "${WEBHOOK_SECRET_NAME}" -w <cache_secret.txt; then
+if grep "${WEBHOOK_SECRET_NAME}" -w <$HOME/cache_secret.txt; then
     webhook_secret_exists=true
 fi
 
@@ -74,39 +73,28 @@ fi
 
 
 export CA_FILE="ca_cert"
-rm -f ${CA_FILE}
-touch ${CA_FILE}
+rm -f $HOME/${CA_FILE}
+touch $HOME/${CA_FILE}
 
 # Generate signed certificate for cache server.
-./webhook-create-signed-cert.sh --namespace "${NAMESPACE}" --cert_output_path "${CA_FILE}" --secret "${WEBHOOK_SECRET_NAME}"
+./webhook-create-signed-cert.sh --namespace "${NAMESPACE}" --cert_output_path "$HOME/${CA_FILE}" --secret "${WEBHOOK_SECRET_NAME}"
 echo "Signed certificate generated for cache server"
 
-# Patch CA_BUNDLE for MutatingWebhookConfiguration
-# Choosing the correct API version.
-# Kubernetes v1.15+ supports better filtering, but it's not trivial to detect since the API version was only bumped to v1 in v1.16.
-# Kubernetes has broken it's versioning policy here. https://github.com/kubernetes/kubernetes/pull/78505#commitcomment-41870735
-# We still want to support filtering on v1.15, so we need to detect it.
-if kubectl api-versions | grep -w 'admissionregistration.k8s.io/v1'; then
-    cache_webhook_config_template="cache-webhook-config.v1.yaml.template"
-elif kubectl version | grep 'Server Version: version.Info{Major:"1", Minor:"15'; then
-    cache_webhook_config_template="cache-webhook-config.v1beta1.v1.15.yaml.template"
-else
-    cache_webhook_config_template="cache-webhook-config.v1beta1.yaml.template"
-fi
-NAMESPACE="$NAMESPACE" ./webhook-patch-ca-bundle.sh --cert_input_path "${CA_FILE}" <./"$cache_webhook_config_template" >./cache-configmap-ca-bundle.yaml
+cache_webhook_config_template="cache-webhook-config.v1.yaml.template"
+NAMESPACE="$NAMESPACE" ./webhook-patch-ca-bundle.sh --cert_input_path "$HOME/${CA_FILE}" <./"$cache_webhook_config_template" >$HOME/cache-configmap-ca-bundle.yaml
 echo "CA_BUNDLE patched successfully"
 
 # Create MutatingWebhookConfiguration
-cat ./cache-configmap-ca-bundle.yaml
-kubectl apply -f ./cache-configmap-ca-bundle.yaml --namespace "${NAMESPACE}"
+cat $HOME/cache-configmap-ca-bundle.yaml
+kubectl apply -f $HOME/cache-configmap-ca-bundle.yaml --namespace "${NAMESPACE}"
 
 # TODO: Check whether we really need to check for the existence of the webhook
 # Usually the Kubernetes objects appear immediately.
 while true; do
     # Should fail if there are connectivity problems
-    kubectl get mutatingwebhookconfigurations "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >webhooks.txt
+    kubectl get mutatingwebhookconfigurations "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" --namespace "${NAMESPACE}" --ignore-not-found >$HOME/webhooks.txt
 
-    if grep "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" -w <webhooks.txt; then
+    if grep "${MUTATING_WEBHOOK_CONFIGURATION_NAME}" -w <$HOME/webhooks.txt; then
         echo "Webhook has been installed. Sleeping forever."
         sleep infinity
     else
